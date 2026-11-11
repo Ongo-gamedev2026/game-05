@@ -1,22 +1,849 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>게임 준비 중</title>
-<style>
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
-         background: #0d0b1e; color: #ecebff; font-family: system-ui, sans-serif; text-align: center; padding: 16px; }
-  h1 { font-size: 28px; }
-  p { color: #9a96c8; }
-  a { color: #3ee6ff; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>점프 어드벤처</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111827; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Inter', sans-serif; }
+        
+        /* 고퀄리티 배경 그라데이션 및 그림자 추가 */
+        #game-container { 
+            position: relative; 
+            width: 400px; 
+            height: 600px; 
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 20px rgba(135, 206, 235, 0.2); 
+            border-radius: 16px; 
+            overflow: hidden; 
+            background: linear-gradient(180deg, #1e3c72 0%, #2a5298 50%, #87CEEB 100%);
+        }
+        
+        canvas { display: block; }
+        
+        /* UI 글래스모피즘(유리 질감) 효과 */
+        .ui-layer { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            display: flex; flex-direction: column; justify-content: center; align-items: center; 
+            background: rgba(17, 24, 39, 0.7); 
+            backdrop-filter: blur(4px);
+        }
+        
+        .hidden { display: none !important; }
+        
+        .btn { 
+            padding: 14px 28px; font-size: 1.2rem; font-weight: bold; border-radius: 12px; cursor: pointer; 
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); 
+            background: linear-gradient(145deg, #fbbf24, #d97706);
+            color: white; border: none; outline: none; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+        }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0,0,0,0.4); }
+        .btn:active { transform: translateY(1px); box-shadow: 0 2px 4px rgba(0,0,0,0.4); }
+    </style>
 </head>
 <body>
-  <div>
-    <h1>🛠️ 게임 준비 중</h1>
-    <p>내 작업실의 <b>⬆️ 게임 올리기</b>를 눌러<br>AI가 만들어 준 게임 코드를 <b>index.html</b> 이름으로 올리면<br>여기에 내 게임이 나타나요!</p>
-    <p><a href="../">← 내 작업실로</a></p>
-  </div>
+
+    <div id="game-container">
+        <!-- 게임 화면 (Canvas) -->
+        <canvas id="gameCanvas" width="400" height="600"></canvas>
+
+        <!-- 시작 화면 -->
+        <div id="startScreen" class="ui-layer">
+            <h1 class="text-5xl font-extrabold mb-4 text-transparent bg-clip-text bg-gradient-to-br from-yellow-300 to-yellow-600 drop-shadow-lg">점프 어드벤처</h1>
+            <div class="bg-white/10 p-5 rounded-xl mb-8 text-sm text-center border border-white/20 shadow-lg">
+                <p class="mb-2">🖱️ <b>마우스</b>: 점프할 방향 조준 (포물선)</p>
+                <p class="mb-2">⌨️ <b>스페이스바 (꾹~)</b>: 파워 게이지 채우기</p>
+                <p class="mb-2">⚡ <b>스페이스바 (떼기)</b>: 점프!</p>
+                <p class="mt-4 text-green-400 font-bold">초록색(Perfect) 구역에 맞춰야 강력합니다!</p>
+            </div>
+            <button class="btn" id="startBtn">게임 시작</button>
+        </div>
+
+        <!-- 결과 화면 -->
+        <div id="resultScreen" class="ui-layer hidden">
+            <h1 id="resultTitle" class="text-4xl font-bold mb-2 text-white drop-shadow-md"></h1>
+            <p id="resultDesc" class="mb-8 text-lg text-gray-300"></p>
+            <button class="btn" id="restartBtn">다시 하기</button>
+        </div>
+
+        <!-- 상점 화면 -->
+        <div id="shopScreen" class="ui-layer hidden">
+            <h1 class="text-4xl font-bold mb-6 text-yellow-400 drop-shadow-md">상점</h1>
+            <p class="mb-6 text-lg text-gray-200">하나의 아이템을 선택하세요!</p>
+            <div class="flex flex-col gap-4 w-3/4 max-w-sm">
+                <button class="btn" id="itemPerfectBtn" style="font-size:1.1rem;">⭐ 1회 강제 퍼펙트</button>
+                <button class="btn" id="itemTimeBtn" style="font-size:1.1rem;">⏳ 시간 역행 (추락 시 1회 부활)</button>
+                <button class="btn" id="itemJumpBtn" style="font-size:1.1rem;">🚀 영구 점프력 5% 증가</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. 게임 설정값
+        // ==========================================
+        const CONFIG = {
+            gravity: 0.4,           
+            jumpPower: 16,          
+            gaugeSpeed: 0.05,       
+            lavaGaugeSpeedMult: 2,  
+            playerSize: 20,         
+            cameraSmooth: 0.1,      
+            gaugePerfectMin: Math.PI/2 - 0.25, 
+            gaugePerfectMax: Math.PI/2 + 0.25, 
+        };
+
+        // ==========================================
+        // 2. 전역 변수 및 상태
+        // ==========================================
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        let gameState = 'START'; 
+        let mouseX = 200, mouseY = 300;
+        let isSpacePressed = false;
+        
+        let cameraY = 0;
+        let gaugeAngle = 0;
+        let gaugeDirection = 1;
+
+        let lastJumpQuality = 'NONE'; 
+        let isOnLava = false;
+        let showShop = false; 
+
+        // 상점 아이템 관련 상태 변수
+        let hasForcedPerfect = false;
+        let hasTimeReversal = false;
+        let jumpPowerMultiplier = 1.0;
+        let merchantVisited = false;
+        let savedPosition = null;
+
+        // ==========================================
+        // 3. 게임 객체 (클래스)
+        // ==========================================
+        class Player {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.vx = 0;
+                this.vy = 0;
+                this.radius = CONFIG.playerSize;
+                this.isGrounded = false;
+                this.tick = 0; // 애니메이션 타이머
+            }
+
+            update() {
+                this.vy += CONFIG.gravity;
+                this.x += this.vx;
+                this.y += this.vy;
+
+                if (this.x < this.radius) { this.x = this.radius; this.vx *= -0.5; }
+                if (this.x > canvas.width - this.radius) { this.x = canvas.width - this.radius; this.vx *= -0.5; }
+
+                this.isGrounded = false;
+                isOnLava = false;
+                showShop = false;
+                this.tick += 0.15; // 모션 타이머 증가
+            }
+
+            draw() {
+                ctx.save();
+                
+                // 마우스 방향에 따른 캐릭터 좌우 반전 및 모션 스케일
+                let faceDir = mouseX > this.x ? 1 : -1;
+                let scaleX = 1;
+                let scaleY = 1;
+                let legOffset = 0;
+                let plumeAngle = Math.sin(this.tick) * 0.2; // 투구 장식 깃털 흔들림
+
+                // 상태에 따른 캐릭터 애니메이션 (찌그러짐/늘어남)
+                if (isSpacePressed && this.isGrounded) {
+                    // 스페이스바 누를 때 (기 모으기)
+                    scaleX = 1.2;
+                    scaleY = 0.8;
+                    let wobble = Math.sin(Date.now() * 0.05) * 0.05; // 부들부들 떨림
+                    scaleX += wobble;
+                    scaleY -= wobble;
+                } else if (!this.isGrounded) {
+                    if (this.vy < 0) {
+                        // 위로 점프할 때 (쭉 늘어남)
+                        scaleX = 0.9;
+                        scaleY = 1.2;
+                        legOffset = 6; // 다리를 뻗음
+                        plumeAngle = -0.5; // 깃털이 뒤로 젖혀짐
+                    } else {
+                        // 아래로 떨어질 때 (살짝 빵빵해짐)
+                        scaleX = 1.1;
+                        scaleY = 0.95;
+                        legOffset = -4; // 다리를 굽힘
+                        plumeAngle = 0.5; // 깃털이 앞으로 쏠림
+                    }
+                } else {
+                    // 평상시 서있을 때 (숨쉬기 모션)
+                    scaleY = 1 + Math.sin(this.tick) * 0.04;
+                    scaleX = 1 - Math.sin(this.tick) * 0.02;
+                }
+
+                // 캐릭터 중심점 이동 후 스케일/방향 적용
+                ctx.translate(this.x, this.y);
+                
+                // 그림자
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+                ctx.shadowBlur = 8;
+                ctx.shadowOffsetY = 4;
+                
+                ctx.scale(faceDir * scaleX, scaleY);
+                ctx.translate(0, -2); // 중심점 살짝 위로 조정
+
+                // --- 귀여운 2D 기사(Knight) 그리기 ---
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#1f2937';
+
+                // 1. 투구 깃털 (빨간색)
+                ctx.fillStyle = '#ef4444';
+                ctx.beginPath();
+                ctx.ellipse(-5, -22, 6, 10, plumeAngle + 0.3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // 2. 머리 (투구)
+                ctx.fillStyle = '#d1d5db'; // 은색
+                ctx.beginPath();
+                ctx.roundRect(-12, -16, 24, 18, 6);
+                ctx.fill();
+                ctx.stroke();
+
+                // 3. 눈(시야구멍)
+                ctx.fillStyle = '#111827'; // 검은색
+                ctx.fillRect(2, -10, 8, 4);
+
+                // 4. 몸통 (갑옷)
+                ctx.fillStyle = '#9ca3af';
+                ctx.beginPath();
+                ctx.roundRect(-14, 2, 28, 14, 4);
+                ctx.fill();
+                ctx.stroke();
+
+                // 5. 벨트
+                ctx.fillStyle = '#b45309'; // 갈색
+                ctx.fillRect(-14, 10, 28, 4);
+
+                // 6. 다리
+                ctx.fillStyle = '#6b7280';
+                // 뒷다리
+                ctx.fillRect(-8, 16 + (this.isGrounded ? 0 : legOffset * 0.5), 6, 8);
+                // 앞다리
+                ctx.fillRect(2, 16 + legOffset, 6, 8);
+
+                // 7. 팔과 검 (소드)
+                ctx.fillStyle = '#9ca3af';
+                ctx.beginPath();
+                ctx.roundRect(-2, 6, 14, 6, 3); // 팔
+                ctx.fill();
+                ctx.stroke();
+                
+                // 검 날
+                ctx.fillStyle = '#f3f4f6';
+                ctx.beginPath();
+                ctx.rect(10, -6, 4, 16);
+                ctx.fill();
+                ctx.stroke();
+                // 검 손잡이
+                ctx.fillStyle = '#fbbf24'; // 금색
+                ctx.fillRect(7, 8, 10, 3);
+
+                ctx.restore();
+
+                // 마우스 방향 조준선 (포물선 궤적)
+                if (this.isGrounded && gameState === 'PLAYING') {
+                    const dx = mouseX - this.x;
+                    const dy = (mouseY + cameraY) - this.y;
+                    let targetAngle = Math.atan2(dy, dx);
+                    if (targetAngle > 0) targetAngle = -Math.PI/2; 
+
+                    // 아이템 버프를 반영한 예측 (퍼펙트 기준 1.0)
+                    const maxForce = CONFIG.jumpPower * jumpPowerMultiplier; 
+                    let currentVx = Math.cos(targetAngle) * maxForce;
+                    let simVy = Math.sin(targetAngle) * maxForce;
+
+                    ctx.beginPath();
+                    let simX = this.x;
+                    let simY = this.y;
+                    ctx.moveTo(simX, simY);
+
+                    let hitSpot = null;
+
+                    // 70 프레임치 물리 예측 곡선 그리기 (착지 지점 포물선 연산)
+                    for (let i = 0; i < 70; i++) {
+                        let nextX = simX + currentVx;
+                        simVy += CONFIG.gravity;
+                        let nextY = simY + simVy;
+                        
+                        // 벽 튕기기 예측
+                        if (nextX < this.radius) { nextX = this.radius; currentVx *= -0.5; }
+                        if (nextX > canvas.width - this.radius) { nextX = canvas.width - this.radius; currentVx *= -0.5; }
+
+                        ctx.lineTo(nextX, nextY);
+
+                        // 플랫폼 착지 예측
+                        if (simVy > 0) {
+                            for (let p of platforms) {
+                                if (nextX + this.radius > p.x && 
+                                    nextX - this.radius < p.x + p.width &&
+                                    nextY + this.radius >= p.y &&
+                                    simY + this.radius <= p.y) {
+                                    hitSpot = { x: nextX, y: p.y };
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        simX = nextX;
+                        simY = nextY;
+                        
+                        if (hitSpot) {
+                            ctx.lineTo(hitSpot.x, hitSpot.y);
+                            break; 
+                        }
+                    }
+
+                    ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+                    ctx.lineWidth = 2.5;
+                    ctx.setLineDash([8, 6]);
+                    ctx.stroke();
+                    ctx.setLineDash([]); 
+
+                    // 착지 예상 타겟 마커 그리기
+                    if (hitSpot) {
+                        ctx.beginPath();
+                        ctx.arc(hitSpot.x, hitSpot.y, 5, 0, Math.PI * 2);
+                        ctx.fillStyle = "rgba(74, 222, 128, 0.9)"; // 초록색 마커
+                        ctx.fill();
+                        ctx.beginPath();
+                        ctx.arc(hitSpot.x, hitSpot.y, 14, 0, Math.PI * 2);
+                        ctx.strokeStyle = "rgba(74, 222, 128, 0.6)";
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                    }
+                }
+            }
+        }
+
+        class Platform {
+            constructor(x, y, width, height, type = 'NORMAL') {
+                this.x = x;
+                this.y = y;
+                this.width = width;
+                this.height = height;
+                this.type = type; 
+            }
+
+            draw() {
+                ctx.save();
+                
+                // 플랫폼 그림자 및 글로벌 효과
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+                ctx.shadowBlur = 12;
+                ctx.shadowOffsetY = 6;
+
+                // 플랫폼 색상 설정 및 발광 효과
+                if (this.type === 'NORMAL') {
+                    ctx.fillStyle = '#5c3a21'; // 고급스러운 갈색
+                } else if (this.type === 'ICE') {
+                    ctx.fillStyle = 'rgba(135, 206, 235, 0.8)';
+                    ctx.shadowColor = 'rgba(135, 206, 235, 0.8)'; // 파란 빛
+                    ctx.shadowBlur = 20;
+                } else if (this.type === 'LAVA') {
+                    ctx.fillStyle = '#e11d48';
+                    ctx.shadowColor = 'rgba(225, 29, 72, 0.8)'; // 빨간 빛
+                    ctx.shadowBlur = 20;
+                }
+
+                // 둥근 사각형 그리기
+                ctx.beginPath();
+                ctx.roundRect(this.x, this.y, this.width, this.height, 8);
+                ctx.fill();
+
+                // 플랫폼 위쪽 하이라이트 (입체감 부여)
+                ctx.shadowColor = 'transparent';
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+                ctx.beginPath();
+                ctx.roundRect(this.x, this.y, this.width, this.height * 0.4, 8);
+                ctx.fill();
+                
+                ctx.restore();
+
+                if (this.type === 'ICE') ctx.fillText("🧊", this.x + this.width/2, this.y + this.height/2);
+                if (this.type === 'LAVA') ctx.fillText("🔥", this.x + this.width/2, this.y + this.height/2);
+            }
+        }
+
+        class Flag {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+            }
+            draw() {
+                ctx.save();
+                ctx.shadowColor = 'rgba(255, 215, 0, 0.8)';
+                ctx.shadowBlur = 15;
+                ctx.font = "45px Arial";
+                ctx.fillText("🚩", this.x, this.y);
+                ctx.restore();
+            }
+        }
+
+        class Merchant {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+            }
+            draw() {
+                ctx.font = "40px Arial";
+                // 상점을 방문했으면 상자 아이콘으로 변경
+                ctx.fillText(merchantVisited ? "📦" : "🧙‍♂️", this.x, this.y);
+                
+                if (showShop && !merchantVisited) {
+                    ctx.fillStyle = "#fbbf24"; // 노란색
+                    ctx.font = "bold 16px Arial";
+                    ctx.shadowColor = "black";
+                    ctx.shadowBlur = 4;
+                    ctx.fillText("상점 입장 가능", this.x, this.y - 45);
+                    ctx.shadowBlur = 0; // 초기화
+                }
+            }
+        }
+
+        let player;
+        let platforms = [];
+        let flag;
+        let merchant;
+
+        // ==========================================
+        // 4. 게임 로직
+        // ==========================================
+        function initGame() {
+            player = new Player(200, 500);
+            cameraY = 0;
+            lastJumpQuality = 'NONE';
+            gaugeAngle = 0;
+            isSpacePressed = false;
+            
+            // 상점 및 상태 초기화
+            hasForcedPerfect = false;
+            hasTimeReversal = false;
+            jumpPowerMultiplier = 1.0;
+            merchantVisited = false;
+            savedPosition = null;
+
+            // 기초 플랫폼 세팅
+            platforms = [
+                new Platform(50, 550, 300, 25, 'NORMAL'), 
+                new Platform(100, 400, 110, 20, 'NORMAL'),
+                new Platform(230, 270, 110, 20, 'ICE'),    
+                new Platform(60, 120, 100, 20, 'LAVA'),    
+                new Platform(200, -30, 150, 25, 'NORMAL')
+            ];
+
+            // 맵 길이 대폭 확장 및 좌우 지그재그 배치 로직
+            let currentY = -150;
+            let side = 'LEFT'; // 번갈아가며 배치하기 위한 변수
+            
+            for(let i = 0; i < 50; i++) {
+                // 올라갈수록 플랫폼 간격이 점진적으로 멀어짐
+                let gapY = 90 + Math.random() * 50 + (i * 1.5); 
+                currentY -= gapY;
+                
+                // 올라갈수록 플랫폼이 점진적으로 좁아짐
+                let width = Math.max(50, 130 - (i * 1.5));
+                
+                let x;
+                // 좌/우 화면 절반을 기준으로 지그재그 랜덤 배치
+                if (side === 'LEFT') {
+                    // 화면 왼쪽 절반 어딘가에 생성
+                    x = 20 + Math.random() * (canvas.width / 2 - width/2 - 20);
+                    side = 'RIGHT'; // 다음은 오른쪽으로
+                } else {
+                    // 화면 오른쪽 절반 어딘가에 생성
+                    x = canvas.width / 2 + Math.random() * (canvas.width / 2 - width - 20);
+                    side = 'LEFT'; // 다음은 왼쪽으로
+                }
+                
+                // 화면 밖으로 나가지 않게 클램핑
+                x = Math.max(20, Math.min(canvas.width - width - 20, x));
+                
+                // 얼음판, 용암판 확률 지정 (올라갈수록 증가)
+                let typeRand = Math.random();
+                let type = 'NORMAL';
+                if (typeRand < 0.15 + (i * 0.005)) type = 'ICE';
+                else if (typeRand < 0.3 + (i * 0.005)) type = 'LAVA';
+
+                platforms.push(new Platform(x, currentY, width, 20, type));
+            }
+
+            // 최상단 클리어 깃발 배치
+            currentY -= 120;
+            platforms.push(new Platform(100, currentY, 200, 25, 'NORMAL'));
+            flag = new Flag(180, currentY - 30);
+            merchant = new Merchant(260, -50); 
+
+            gameState = 'PLAYING';
+            hideUI();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function checkCollisions() {
+            // 통과 및 착지 판정 개선
+            if (player.vy > 0) { // 캐릭터가 아래로 떨어질 때만 충돌
+                for (let p of platforms) {
+                    if (player.x + player.radius > p.x && 
+                        player.x - player.radius < p.x + p.width &&
+                        player.y + player.radius >= p.y &&
+                        player.y + player.radius - player.vy - 1 <= p.y) { // 이전 프레임에는 플랫폼 위에 있었는지 검사 (통과 방지)
+                        
+                        player.y = p.y - player.radius;
+                        player.vy = 0;
+                        
+                        if (p.type === 'ICE') {
+                            player.vx *= 0.9; // 미끄러짐
+                        } else {
+                            player.vx = 0; 
+                        }
+                        
+                        player.isGrounded = true;
+                        if (p.type === 'LAVA') isOnLava = true;
+                        break;
+                    }
+                }
+            }
+
+            const distToMerchant = Math.hypot(player.x - merchant.x, player.y - merchant.y);
+            if (distToMerchant < 120) {
+                showShop = true;
+                // 땅에 닿아있고 상점을 아직 안 들렀다면 상점 오픈
+                if (player.isGrounded && !merchantVisited) {
+                    gameState = 'SHOP';
+                    merchantVisited = true;
+                    document.getElementById('shopScreen').classList.remove('hidden');
+                }
+            } else {
+                showShop = false;
+            }
+
+            // 클리어
+            if (Math.hypot(player.x - flag.x, player.y - flag.y) < 40) {
+                gameState = 'CLEAR';
+                showResult(true);
+            }
+
+            // 추락
+            if (player.y > cameraY + 650) {
+                // 시간 역행 아이템이 있고 점프한 기록이 있다면 부활!
+                if (hasTimeReversal && savedPosition) {
+                    player.x = savedPosition.x;
+                    player.y = savedPosition.y;
+                    player.vx = 0;
+                    player.vy = 0;
+                    cameraY = savedPosition.cameraY;
+                    player.isGrounded = true;
+                    hasTimeReversal = false; // 아이템 1회 소모
+                    lastJumpQuality = '시간 역행!';
+                } else {
+                    gameState = 'OVER';
+                    showResult(false);
+                }
+            }
+        }
+
+        function executeJump() {
+            if (!player.isGrounded) return;
+
+            // 점프 직전 위치 저장 (시간 역행용)
+            savedPosition = { x: player.x, y: player.y, cameraY: cameraY };
+
+            const dx = mouseX - player.x;
+            const dy = (mouseY + cameraY) - player.y;
+            let targetAngle = Math.atan2(dy, dx);
+            if (targetAngle > 0) targetAngle = -Math.PI/2; 
+
+            let powerMultiplier = 0;
+            const pMin = CONFIG.gaugePerfectMin;
+            const pMax = CONFIG.gaugePerfectMax;
+            const goodMargin = 0.35; // 노란색(Good) 구역의 여유분
+
+            if (hasForcedPerfect) {
+                lastJumpQuality = '아이템 퍼펙트!';
+                powerMultiplier = 1.0;
+                hasForcedPerfect = false; // 아이템 1회 소모
+            } else if (gaugeAngle >= pMin && gaugeAngle <= pMax) {
+                lastJumpQuality = 'PERFECT';
+                powerMultiplier = 1.0;
+            } else if (gaugeAngle >= pMin - goodMargin && gaugeAngle <= pMax + goodMargin) {
+                lastJumpQuality = 'GOOD';
+                powerMultiplier = 0.7;
+            } else {
+                lastJumpQuality = 'BAD';
+                powerMultiplier = 0.4;
+            }
+
+            // 점프력 증가 아이템(jumpPowerMultiplier) 곱하기 적용
+            const jumpForce = CONFIG.jumpPower * powerMultiplier * jumpPowerMultiplier;
+            player.vx = Math.cos(targetAngle) * jumpForce;
+            player.vy = Math.sin(targetAngle) * jumpForce;
+            player.isGrounded = false;
+        }
+
+        // ==========================================
+        // 5. 플로팅 부채꼴 게이지 렌더링
+        // ==========================================
+        function drawFloatingGauge() {
+            if (!isSpacePressed || !player.isGrounded) return;
+
+            const cx = player.x + 45; 
+            const cy = player.y - 35; 
+            const radius = 35; // 부채꼴 반지름
+            const thickness = 16; // 부채꼴 두께
+
+            ctx.save();
+            
+            // 1. 게이지 배경 테두리 (어두운 반투명 부채꼴)
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, Math.PI, 0);
+            ctx.lineWidth = thickness + 6;
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+            ctx.stroke();
+
+            ctx.lineWidth = thickness;
+            ctx.lineCap = 'butt';
+
+            const pMin = CONFIG.gaugePerfectMin;
+            const pMax = CONFIG.gaugePerfectMax;
+            const goodMargin = 0.35;
+
+            // 섹션 그리기 헬퍼 함수
+            function drawZone(startAng, endAng, color, isGlow = false) {
+                ctx.beginPath();
+                // 캔버스 좌표계 특성상 방향을 맞추기 위해 역산하여 그림
+                ctx.arc(cx, cy, radius, Math.PI - startAng, Math.PI - endAng, true); 
+                ctx.strokeStyle = color;
+                if (isGlow) {
+                    ctx.shadowColor = color;
+                    ctx.shadowBlur = 12; // Perfect 구역 빛나는 효과
+                } else {
+                    ctx.shadowBlur = 0;
+                }
+                ctx.stroke();
+            }
+
+            // 2. 색상별 게이지 섹션 렌더링
+            // 빨강 (좌측 Bad)
+            drawZone(0, pMin - goodMargin, '#ef4444');
+            // 노랑 (좌측 Good)
+            drawZone(pMin - goodMargin, pMin, '#eab308');
+            // 초록 (중앙 Perfect - 하이라이트)
+            drawZone(pMin, pMax, '#4ade80', true);
+            // 노랑 (우측 Good)
+            drawZone(pMax, pMax + goodMargin, '#eab308');
+            // 빨강 (우측 Bad)
+            drawZone(pMax + goodMargin, Math.PI, '#ef4444');
+
+            // 3. UI 글래스 느낌의 테두리 장식
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius + thickness/2, Math.PI, 0);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.lineWidth = 1.5;
+            ctx.shadowBlur = 0;
+            ctx.stroke();
+
+            // 4. 게이지 바늘 (Needle)
+            const needleAngle = Math.PI - gaugeAngle;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(cx + Math.cos(needleAngle) * (radius + thickness/2 + 6), cy + Math.sin(needleAngle) * (radius + thickness/2 + 6));
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.shadowColor = 'rgba(0,0,0,0.8)';
+            ctx.shadowBlur = 6;
+            ctx.stroke();
+
+            // 5. 바늘 회전축 (Center Pivot)
+            ctx.beginPath();
+            ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+            ctx.fillStyle = '#111827'; // 짙은 네이비
+            ctx.fill();
+            
+            // 6. 용암 디버프 알림 텍스트
+            if (isOnLava) {
+                ctx.fillStyle = '#ff4d4d';
+                ctx.font = 'bold 13px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText("🔥속도 2배!", cx, cy - radius - thickness - 8);
+            }
+            
+            ctx.restore();
+        }
+
+        // ==========================================
+        // 6. 메인 렌더링 루프
+        // ==========================================
+        function gameLoop() {
+            if (gameState !== 'PLAYING') return;
+
+            player.update();
+            checkCollisions();
+
+            if (isSpacePressed && player.isGrounded) {
+                let speed = CONFIG.gaugeSpeed;
+                if (isOnLava) speed *= CONFIG.lavaGaugeSpeedMult;
+
+                gaugeAngle += speed * gaugeDirection;
+                if (gaugeAngle > Math.PI || gaugeAngle < 0) {
+                    gaugeDirection *= -1; 
+                    gaugeAngle = Math.max(0, Math.min(Math.PI, gaugeAngle));
+                }
+            }
+
+            let targetCameraY = player.y - canvas.height / 2;
+            if (targetCameraY < cameraY) {
+                cameraY += (targetCameraY - cameraY) * CONFIG.cameraSmooth;
+            }
+
+            // 캔버스 클리어 
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 배경 구름 및 장식
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.beginPath(); ctx.arc(80, 150 - cameraY%200, 40, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(110, 130 - cameraY%200, 30, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(320, 350 - cameraY%350, 50, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(280, 370 - cameraY%350, 35, 0, Math.PI*2); ctx.fill();
+
+            // ----- 카메라 기준 드로잉 시작 -----
+            ctx.save();
+            ctx.translate(0, -cameraY);
+
+            flag.draw();
+            merchant.draw();
+            platforms.forEach(p => p.draw());
+            player.draw();
+            drawFloatingGauge(); // 카메라 안으로 이동하여 캐릭터 옆에 딱 붙어있게 처리
+
+            // 점프 판정 텍스트 (점프 후 잠깐 노출)
+            if (lastJumpQuality !== 'NONE' && !player.isGrounded && player.vy < 0) {
+                ctx.fillStyle = lastJumpQuality === 'PERFECT' ? '#4ade80' : 
+                                lastJumpQuality === 'GOOD' ? '#facc15' : '#ef4444';
+                ctx.font = "bold 22px Arial";
+                ctx.shadowColor = 'black';
+                ctx.shadowBlur = 4;
+                ctx.fillText(lastJumpQuality, player.x, player.y - 30);
+                ctx.shadowBlur = 0;
+            }
+
+            ctx.restore();
+            // ----- 카메라 기준 드로잉 끝 -----
+
+            // 8. 좌측 상단 현재 높이 UI 표시
+            const currentHeight = Math.max(0, Math.floor((500 - player.y) / 10));
+            ctx.save();
+            ctx.fillStyle = 'rgba(17, 24, 39, 0.6)'; // 반투명 검정 배경
+            ctx.beginPath();
+            ctx.roundRect(15, 15, 100, 36, 8);
+            ctx.fill();
+            
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 16px Arial';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`높이: ${currentHeight}m`, 25, 33);
+            ctx.restore();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ==========================================
+        // 7. UI 제어 및 이벤트
+        // ==========================================
+        const startScreen = document.getElementById('startScreen');
+        const resultScreen = document.getElementById('resultScreen');
+        const resultTitle = document.getElementById('resultTitle');
+        const resultDesc = document.getElementById('resultDesc');
+
+        function hideUI() {
+            startScreen.classList.add('hidden');
+            resultScreen.classList.add('hidden');
+            document.getElementById('shopScreen').classList.add('hidden');
+        }
+
+        function showResult(isClear) {
+            resultScreen.classList.remove('hidden');
+            if (isClear) {
+                resultTitle.textContent = "스테이지 클리어! 🎉";
+                resultTitle.className = "text-4xl font-bold mb-2 text-green-400 drop-shadow-md";
+                resultDesc.textContent = "완벽한 컨트롤입니다!";
+            } else {
+                resultTitle.textContent = "게임 오버 💀";
+                resultTitle.className = "text-4xl font-bold mb-2 text-red-500 drop-shadow-md";
+                resultDesc.textContent = "아래로 떨어지고 말았습니다...";
+            }
+        }
+
+        document.getElementById('startBtn').addEventListener('click', initGame);
+        document.getElementById('restartBtn').addEventListener('click', initGame);
+
+        // --- 상점 아이템 선택 이벤트 처리 ---
+        function closeShop() {
+            document.getElementById('shopScreen').classList.add('hidden');
+            gameState = 'PLAYING';
+            isSpacePressed = false;
+            requestAnimationFrame(gameLoop); // 게임 화면 다시 재생
+        }
+
+        document.getElementById('itemPerfectBtn').addEventListener('click', () => {
+            hasForcedPerfect = true;
+            closeShop();
+        });
+        document.getElementById('itemTimeBtn').addEventListener('click', () => {
+            hasTimeReversal = true;
+            closeShop();
+        });
+        document.getElementById('itemJumpBtn').addEventListener('click', () => {
+            jumpPowerMultiplier = 1.05;
+            closeShop();
+        });
+        // ---------------------------------
+
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = e.clientX - rect.left;
+            mouseY = e.clientY - rect.top;
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault(); 
+                if (gameState === 'PLAYING' && player.isGrounded && !isSpacePressed) {
+                    isSpacePressed = true;
+                    gaugeAngle = 0; 
+                }
+            }
+        }, { passive: false });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                if (gameState === 'PLAYING' && isSpacePressed) {
+                    isSpacePressed = false;
+                    executeJump();
+                }
+            }
+        });
+
+    </script>
 </body>
 </html>
